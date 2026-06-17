@@ -6,7 +6,7 @@ import sys
 import os
 from pathlib import Path
 from typing import Dict, Any, Optional
-from .notifier import ClaudeNotifier
+from .notifier import ClaudeNotifier, TelegramNotifier
 
 logger = logging.getLogger(__name__)
 
@@ -14,9 +14,14 @@ logger = logging.getLogger(__name__)
 class HookHandler:
     """Process Claude Code hook events and send appropriate notifications"""
     
-    def __init__(self, notifier: Optional[ClaudeNotifier] = None):
+    def __init__(
+        self,
+        notifier: Optional[ClaudeNotifier] = None,
+        telegram: Optional[TelegramNotifier] = None
+    ):
         self.notifier = notifier or ClaudeNotifier()
-        
+        self.telegram = telegram
+
         # Define notification templates for different hook events
         self.event_templates = {
             "PreToolUse": {
@@ -151,11 +156,13 @@ class HookHandler:
             message = f"Unknown event: {event_type}"
             if project_info:
                 message = f"{message}\nProject: {project_info}"
-            return self.notifier.send_notification(
+            desktop_success = self.notifier.send_notification(
                 title="Claude Event",
                 message=message,
                 urgency="normal"
             )
+            self._send_telegram("Claude Event", message, "normal")
+            return desktop_success
         
         template = self.event_templates[event_type]
         title = template["title"]
@@ -191,14 +198,35 @@ class HookHandler:
             # Show full project info in the message body
             message = f"{message}\nProject: {project_info}"
         
-        # Send the notification
-        return self.notifier.send_notification(
+        # Send the desktop notification; its result drives the return value
+        desktop_success = self.notifier.send_notification(
             title=title,
             message=message,
             urgency=urgency,
             sound=(urgency in ["normal", "critical"])
         )
-    
+
+        # Fan out to Telegram as an additional, best-effort channel
+        self._send_telegram(title, message, urgency)
+        return desktop_success
+
+    def _send_telegram(self, title: str, message: str, urgency: str) -> None:
+        """Best-effort fan-out to Telegram; never affects the hook exit path
+
+        ``TelegramNotifier.send_notification`` already swallows its own
+        transport errors, so this is a thin guard that no-ops when no Telegram
+        notifier is configured and keeps any unexpected error from escaping the
+        non-blocking hook contract.
+        """
+        if self.telegram is None or not self.telegram.is_configured():
+            return
+        try:
+            self.telegram.send_notification(
+                title=title, message=message, urgency=urgency
+            )
+        except Exception as e:
+            logger.warning("Telegram fan-out failed: %s", e)
+
     def _get_tool_input_preview(self, tool_name: str, tool_input: Dict[str, Any]) -> Optional[str]:
         """Get a preview of tool input for the notification"""
         if tool_name == "Bash":
