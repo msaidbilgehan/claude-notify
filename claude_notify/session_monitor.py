@@ -1,10 +1,8 @@
 """Monitor Claude sessions for activity that requires user attention"""
 
-import os
 import time
-import json
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 from datetime import datetime, timedelta
 
 
@@ -66,7 +64,7 @@ class ClaudeSessionMonitor:
         except Exception:
             return []
     
-    def _analyze_transcript_state(self, transcript_lines: List[str]) -> Dict[str, any]:
+    def _analyze_transcript_state(self, transcript_lines: List[str]) -> Dict[str, Any]:
         """Analyze transcript to determine if Claude needs attention"""
         if not transcript_lines:
             return {"needs_attention": False, "reason": None}
@@ -137,7 +135,7 @@ class ClaudeSessionMonitor:
         
         return {"needs_attention": False, "reason": None}
     
-    def check_sessions(self) -> List[Dict[str, any]]:
+    def check_sessions(self) -> List[Dict[str, Any]]:
         """Check all active sessions for those needing attention"""
         sessions_needing_attention = []
         
@@ -178,7 +176,7 @@ class ClaudeSessionMonitor:
         
         return sessions_needing_attention
     
-    def get_session_info(self, transcript_path: str) -> Optional[Dict[str, any]]:
+    def get_session_info(self, transcript_path: str) -> Optional[Dict[str, Any]]:
         """Get information about a specific session"""
         path = Path(transcript_path)
         if not path.exists():
