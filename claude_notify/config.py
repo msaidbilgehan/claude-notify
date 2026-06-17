@@ -1,10 +1,12 @@
 """Configuration management for Claude Notify"""
 
+import logging
 import os
-import json
 import yaml
 from pathlib import Path
 from typing import Dict, Any
+
+logger = logging.getLogger(__name__)
 
 
 def get_config_dir() -> Path:
@@ -51,7 +53,9 @@ def load_config() -> Dict[str, Any]:
                         config[key] = value
                 return config
         except Exception as e:
-            print(f"Error loading config: {e}")
+            logger.warning(
+                "Failed to load config from %s, using defaults: %s", config_file, e
+            )
             return get_default_config()
     else:
         # Create default config
@@ -68,4 +72,4 @@ def save_config(config: Dict[str, Any]) -> None:
         with open(config_file, "w") as f:
             yaml.dump(config, f, default_flow_style=False)
     except Exception as e:
-        print(f"Error saving config: {e}")
+        logger.error("Failed to save config to %s: %s", config_file, e)

@@ -1,11 +1,14 @@
 """Hook handler for Claude Code integration"""
 
 import json
+import logging
 import sys
 import os
 from pathlib import Path
 from typing import Dict, Any, Optional
 from .notifier import ClaudeNotifier
+
+logger = logging.getLogger(__name__)
 
 
 class HookHandler:
@@ -227,10 +230,10 @@ class HookHandler:
             # Parse JSON
             return json.loads(input_data)
         except json.JSONDecodeError as e:
-            print(f"Error parsing JSON: {e}", file=sys.stderr)
+            logger.error("Failed to parse hook JSON from stdin: %s", e)
             return None
         except Exception as e:
-            print(f"Error reading stdin: {e}", file=sys.stderr)
+            logger.error("Failed to read hook input from stdin: %s", e)
             return None
     
     def determine_event_type(self, data: Dict[str, Any]) -> Optional[str]:

@@ -1,10 +1,13 @@
 """Cross-platform notification system for Claude"""
 
+import logging
 import platform
 import subprocess
 import os
 from typing import Optional, Dict, Any
 from plyer import notification as plyer_notification
+
+logger = logging.getLogger(__name__)
 
 
 class ClaudeNotifier:
@@ -46,8 +49,7 @@ class ClaudeNotifier:
                 # Fallback to plyer for unknown systems
                 return self._send_plyer_notification(title, message, timeout)
         except Exception as e:
-            print(f"Notification error: {e}")
-            # Try fallback method
+            logger.warning("Notification failed, falling back to plyer: %s", e)
             return self._send_plyer_notification(title, message, timeout)
     
     def _send_macos_notification(self, title: str, message: str, sound: bool) -> bool:
