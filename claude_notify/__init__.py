@@ -1,7 +1,10 @@
 """Claude Notify - Cross-platform notifications for Claude"""
 
+# Single source of truth for the package version. pyproject.toml reads this
+# via [tool.setuptools.dynamic], and the CLI imports it for --version, so the
+# value must only ever be changed here.
 __version__ = "0.1.1"
-__author__ = "Your Name"
+__author__ = "jamez01"
 
 from .notifier import ClaudeNotifier
 from .hook_handler import HookHandler

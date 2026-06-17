@@ -5,6 +5,7 @@ import time
 import sys
 from pathlib import Path
 from typing import Optional
+from . import __version__
 from .notifier import ClaudeNotifier
 from .config import load_config, save_config, get_default_config
 from .hook_handler import HookHandler
@@ -12,7 +13,7 @@ from .session_monitor import ClaudeSessionMonitor
 
 
 @click.group()
-@click.version_option(version="0.1.1", prog_name="claude-notify")
+@click.version_option(version=__version__, prog_name="claude-notify")
 def cli():
     """Claude Notify - Cross-platform notifications for Claude"""
     pass
