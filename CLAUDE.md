@@ -5,46 +5,25 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Project Overview
 Claude-notify is a cross-platform notification system that integrates with Claude Code hooks to alert users when Claude needs their attention or performs certain actions. It can be used both as a Claude hook and as a standalone notification tool.
 
-## Development Approach
-This project follows the SPARC (Specification, Pseudocode, Architecture, Refinement, Completion) methodology as configured in the global CLAUDE.md settings.
-
 ## Project Status
-- **Current State**: Initial setup phase - no implementation yet
-- **Goal**: Create a multi-OS script for Claude attention notifications
 
-## Implementation Notes
-When implementing this project, consider:
-1. Cross-platform compatibility (Windows, macOS, Linux)
-2. Different notification mechanisms per OS:
-   - macOS: `osascript` or terminal-notifier
-   - Linux: `notify-send` or similar
-   - Windows: PowerShell notifications or toast notifications
-3. Trigger mechanisms for when Claude needs attention
-4. Configuration options for notification preferences
+Implemented and released as **v0.1.1**. The version is single-sourced in
+`claude_notify/__init__.py` (`__version__`); `pyproject.toml` reads it via
+`[tool.setuptools.dynamic]` and the CLI exposes it as `--version`. Packaging is
+`pyproject.toml` (setuptools) — there is no `setup.py`.
 
-## Suggested Technology Stack
-Based on the cross-platform requirement, consider:
-- **Python**: Good cross-platform support with libraries like `plyer` for notifications
-- **Node.js**: Cross-platform with packages like `node-notifier`
-- **Shell scripts**: Platform-specific implementations with a wrapper script
+## Tech Stack & Conventions
 
-## SPARC Workflow for This Project
-Use the following SPARC commands to develop this project:
-
-1. **Specification Phase**: 
-   ```bash
-   npx claude-flow sparc run spec-pseudocode "Define notification requirements for Claude attention events"
-   ```
-
-2. **Architecture Phase**:
-   ```bash
-   npx claude-flow sparc run architect "Design cross-platform notification architecture"
-   ```
-
-3. **Implementation Phase**:
-   ```bash
-   npx claude-flow sparc tdd "implement notification system"
-   ```
+- **Python**, 3.7-compatible typing style: use `typing.Optional/Dict/Any`. Do
+  **not** use PEP 604 (`X | None`) unions or `from __future__ import annotations`.
+  Tooling (ruff/mypy) targets py311.
+- **Click** (CLI), **plyer** (desktop-notification fallback), **PyYAML** (config).
+- Diagnostics go through the **`logging`** module
+  (`logger = logging.getLogger(__name__)`) — do not add `print` to package code.
+- Notification senders return `bool` and swallow transport errors: a failed send
+  must never raise out of the hook/watch path (non-blocking contract).
+- Config is dict-based with merge-with-defaults: new keys added to
+  `get_default_config()` self-heal into existing user config files.
 
 ## Development Commands
 
@@ -57,19 +36,29 @@ pip install -e .
 pip install -r requirements.txt
 ```
 
-### Testing the Notification System
+### Tests, Lint, Types
 ```bash
-# Check system dependencies
+# Run the test suite (tests/ — pytest configured in pyproject.toml)
+pytest
+
+# Lint (CI enforces `ruff check`)
+ruff check .
+
+# Type check
+mypy claude_notify
+```
+
+### Manual Notification Checks
+```bash
+# Check system dependencies and Telegram channel status
 claude-notify check
 
-# Send a test notification
+# Send a test notification (add --telegram to also hit the Telegram channel)
 claude-notify send --title "Test" --message "Testing claude-notify"
 
-# Test watch mode functionality
-python examples/test-watch-mode.py
-
-# Run the example script
+# Run example scripts
 python examples/example_usage.py
+python examples/telegram_example.py
 
 # Test real-time monitoring (in separate terminal)
 claude-notify watch --verbose
@@ -100,21 +89,34 @@ The application is designed to work as a Claude Code hook. Key features:
 - Non-blocking operation to avoid interrupting Claude's workflow
 - **Project identification**: All notifications include project name in title and full path in message
 
+### Notification Channels
+
+- **Desktop** (`ClaudeNotifier`): macOS `osascript`, Linux `notify-send`, Windows
+  PowerShell toast, with a plyer fallback. Untrusted text is passed as `argv` /
+  environment variables, never interpolated into the script — this is an injection
+  fix (`b906958`); do not "simplify" it back to string interpolation.
+- **Telegram** (`TelegramNotifier`, opt-in): outbound-only via the Bot API over
+  stdlib `urllib`; enabled by `telegram_enabled` in config.
+
+**Credential precedence (gotcha):** for the Telegram token/chat id, a non-empty
+config value wins; `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` are only a fallback
+when the config value is empty. The token is masked (`***`) in CLI output and
+must never be logged.
+
 ### Project Structure
 ```
 claude-notify/
 ├── claude_notify/
-│   ├── __init__.py          # Package initialization
-│   ├── notifier.py          # Cross-platform notification logic
-│   ├── cli.py               # Command-line interface with hook support
-│   ├── config.py            # Configuration management
-│   └── hook_handler.py      # Claude hook event processing
-├── examples/
-│   ├── example_usage.py     # Example usage script
-│   ├── claude-settings.json # Example Claude hook configuration
-│   ├── test-hook-data.json  # Test data for hook functionality
-│   └── test-hook.sh         # Test script for hook integration
-├── requirements.txt         # Python dependencies
-├── setup.py                 # Package setup configuration
-└── README.md               # User documentation with hook setup
+│   ├── __init__.py          # Public API + single-source __version__
+│   ├── notifier.py          # ClaudeNotifier (desktop) + TelegramNotifier + build_telegram_notifier
+│   ├── cli.py               # Click CLI: send, watch, hook, check, config
+│   ├── config.py            # YAML config: get_default_config / load_config / save_config
+│   ├── hook_handler.py      # Claude hook event → notification routing
+│   └── session_monitor.py   # Transcript watching for `watch` mode
+├── tests/                   # pytest suite (test_*.py per module)
+├── examples/                # Demos: example_usage.py, telegram_example.py, test-*.py
+├── .github/workflows/ci.yml # CI: ruff + pytest
+├── pyproject.toml           # Packaging, deps, ruff/pytest/mypy config
+├── requirements.txt         # Runtime dependencies
+└── README.md
 ```

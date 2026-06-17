@@ -20,7 +20,7 @@ A simple, cross-platform notification system to alert you when Claude needs your
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/claude-notify.git
+git clone https://github.com/msaidbilgehan/claude-notify.git
 cd claude-notify
 
 # Install dependencies
@@ -301,11 +301,14 @@ best-effort and never blocks Claude or your desktop alerts.
 ## Development
 
 ```bash
-# Install in development mode
-pip install -e .
+# Install in development mode (with dev tools: pytest, ruff, mypy)
+pip install -e ".[dev]"
 
-# Run tests (when implemented)
-python -m pytest
+# Run the test suite
+pytest
+
+# Lint
+ruff check .
 ```
 
 ## License
