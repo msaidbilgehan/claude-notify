@@ -7,7 +7,6 @@ delivers it as ``osascript`` run-handler ``argv`` and Windows delivers it as
 environment data, keeping it inert (see ``SEC_COMMAND_INJECTION``).
 """
 
-import subprocess
 import unittest
 from unittest import mock
 

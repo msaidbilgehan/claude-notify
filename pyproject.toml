@@ -73,14 +73,6 @@ line-length = 88
 # "B" and the full "E"/"W" sets after a one-off formatting pass — those flag
 # pre-existing import order/whitespace style across every module.
 
-[tool.ruff.lint.per-file-ignores]
-# Pre-existing unused imports that sibling fix branches remove. Drop these
-# entries once those branches land:
-#   notifier.py        -> fix/notifier-shell-injection (uses os, drops Optional/Any)
-#   session_monitor.py -> fix/session-monitor-any-type (drops os/json)
-"claude_notify/notifier.py" = ["F401"]
-"claude_notify/session_monitor.py" = ["F401"]
-
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
