@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 from typing import Optional
 from . import __version__
-from .notifier import ClaudeNotifier
+from .notifier import ClaudeNotifier, TelegramNotifier, build_telegram_notifier
 from .config import load_config, save_config, get_default_config
 from .hook_handler import HookHandler
 from .session_monitor import ClaudeSessionMonitor
@@ -47,10 +47,22 @@ def cli():
     default=True,
     help="Play notification sound"
 )
-def send(title: str, message: str, urgency: str, timeout: int, sound: bool):
+@click.option(
+    "--telegram/--no-telegram",
+    default=False,
+    help="Also send the notification to the configured Telegram chat"
+)
+def send(
+    title: str,
+    message: str,
+    urgency: str,
+    timeout: int,
+    sound: bool,
+    telegram: bool
+):
     """Send a notification immediately"""
     notifier = ClaudeNotifier()
-    
+
     success = notifier.send_notification(
         title=title,
         message=message,
@@ -58,11 +70,34 @@ def send(title: str, message: str, urgency: str, timeout: int, sound: bool):
         timeout=timeout,
         sound=sound
     )
-    
+
     if success:
         click.echo("✓ Notification sent successfully")
     else:
         click.echo("✗ Failed to send notification", err=True)
+
+    # Telegram is an independent, opt-in channel; attempt it even if the
+    # desktop send failed, but let the desktop result drive the exit code.
+    if telegram:
+        telegram_notifier = build_telegram_notifier(load_config())
+        if telegram_notifier is None:
+            click.echo(
+                "✗ Telegram not enabled or configured (set telegram_enabled, "
+                "telegram_bot_token, telegram_chat_id)",
+                err=True
+            )
+        elif telegram_notifier.send_notification(
+            title=title,
+            message=message,
+            urgency=urgency,
+            timeout=timeout,
+            sound=sound
+        ):
+            click.echo("✓ Telegram notification sent successfully")
+        else:
+            click.echo("✗ Failed to send Telegram notification", err=True)
+
+    if not success:
         sys.exit(1)
 
 
@@ -87,6 +122,7 @@ def watch(interval: int, all_projects: bool, verbose: bool):
     """Watch for Claude activity and notify when attention is needed"""
     config = load_config()
     notifier = ClaudeNotifier()
+    telegram = build_telegram_notifier(config)
     monitor = ClaudeSessionMonitor()
     
     # Track which sessions we've already notified about
@@ -116,15 +152,30 @@ def watch(interval: int, all_projects: bool, verbose: bool):
                     # Send notification
                     project_name = session["project"]
                     reason = session["reason"]
-                    
+
+                    title = f"Claude needs attention - {project_name}"
+                    message = (
+                        f"{reason}\nProject: {project_name} "
+                        f"({session['project_path']})"
+                    )
+                    urgency = (
+                        "critical" if "question" in reason.lower() else "normal"
+                    )
+
                     success = notifier.send_notification(
-                        title=f"Claude needs attention - {project_name}",
-                        message=f"{reason}\nProject: {project_name} ({session['project_path']})",
-                        urgency="normal" if "question" not in reason.lower() else "critical",
+                        title=title,
+                        message=message,
+                        urgency=urgency,
                         timeout=config.get("timeout", 10),
                         sound=config.get("sound", True)
                     )
-                    
+
+                    # Fan out to Telegram when enabled (best-effort)
+                    if telegram is not None:
+                        telegram.send_notification(
+                            title=title, message=message, urgency=urgency
+                        )
+
                     if success:
                         notified_sessions.add(session_key)
                         click.echo(f"🔔 [{time.strftime('%H:%M:%S')}] Notification sent for {project_name}: {reason}")
@@ -167,7 +218,25 @@ def check():
     click.echo(f"Native support: {'✓' if deps['native'] else '✗'}")
     click.echo(f"Notification method: {deps.get('method', 'unknown')}")
     click.echo(f"Plyer fallback: {'✓' if deps['plyer'] else '✗'}")
-    
+
+    # Telegram channel status. Only booleans are printed; the bot token is
+    # never echoed (SEC_SENSITIVE_LOG).
+    config_data = load_config()
+    telegram = TelegramNotifier(
+        bot_token=config_data.get("telegram_bot_token") or None,
+        chat_id=config_data.get("telegram_chat_id") or None,
+        app_name=config_data.get("app_name", "Claude")
+    )
+    tg_status = telegram.check_telegram()
+    enabled = "✓" if config_data.get("telegram_enabled") else "✗"
+    configured = "✓" if tg_status["configured"] else "✗"
+    reachable = "✓" if tg_status["reachable"] else "✗"
+    click.echo("")
+    click.echo("Telegram channel:")
+    click.echo(f"  Enabled: {enabled}")
+    click.echo(f"  Configured: {configured}")
+    click.echo(f"  Reachable: {reachable}")
+
     # Test notification
     click.echo("\nSending test notification...")
     success = notifier.send_notification(
@@ -195,6 +264,9 @@ def config_show():
     click.echo("Current Configuration:")
     click.echo("=" * 30)
     for key, value in config_data.items():
+        # Mask the bot token so `config show` never prints the secret.
+        if key == "telegram_bot_token" and value:
+            value = "***"
         click.echo(f"{key}: {value}")
 
 
@@ -208,12 +280,15 @@ def config_set(key: str, value: str):
     # Convert value types
     if key in ["timeout", "interval"]:
         value = int(value)
-    elif key in ["sound"]:
+    elif key in ["sound", "telegram_enabled"]:
         value = value.lower() in ["true", "yes", "1", "on"]
-    
+
     config_data[key] = value
     save_config(config_data)
-    click.echo(f"✓ Set {key} = {value}")
+
+    # Never echo the bot token back (SEC_SENSITIVE_LOG).
+    display_value = "***" if key == "telegram_bot_token" and value else value
+    click.echo(f"✓ Set {key} = {display_value}")
 
 
 @config.command("reset")
@@ -255,8 +330,8 @@ def hook(event_type: Optional[str], test: bool):
       }
     }
     """
-    handler = HookHandler()
-    
+    handler = HookHandler(telegram=build_telegram_notifier(load_config()))
+
     if test:
         # Test mode - read from file
         try:

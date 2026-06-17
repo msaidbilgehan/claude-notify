@@ -12,6 +12,7 @@ A simple, cross-platform notification system to alert you when Claude needs your
 - 🔄 **Watch mode**: Continuous monitoring with periodic notifications
 - 🚨 **Smart alerts**: Critical notifications for potentially destructive operations
 - 📁 **Project identification**: All notifications include project name and path
+- 📲 **Telegram channel**: Optionally mirror notifications to a Telegram chat
 
 ## Installation
 
@@ -210,6 +211,77 @@ Available options:
 - `interval`: Watch mode check interval in seconds (default: 300)
 - `title`: Default notification title
 - `message`: Default notification message
+- `telegram_enabled`: Also send notifications to Telegram (default: false)
+- `telegram_bot_token`: Telegram bot token from @BotFather (secret; shown masked)
+- `telegram_chat_id`: Destination Telegram chat id
+
+> The `telegram_bot_token` and `telegram_chat_id` can also be supplied via the
+> `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` environment variables. The config
+> file takes precedence: an environment variable is read only when the matching
+> config value is empty.
+
+## Telegram Notifications
+
+In addition to native desktop notifications, claude-notify can mirror alerts to a
+Telegram chat. This is an **opt-in, outbound-only** channel (it sends messages; it
+never reads replies) and uses only the Python standard library — no extra
+dependencies.
+
+### 1. Create a bot and get a token
+
+1. Open Telegram and start a chat with [@BotFather](https://t.me/BotFather).
+2. Send `/newbot` and follow the prompts to name your bot.
+3. BotFather replies with a **bot token** such as
+   `123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11`.
+
+### 2. Find your chat id
+
+1. Send any message to your new bot (or add it to a group and post a message).
+2. Open `https://api.telegram.org/bot<YOUR_TOKEN>/getUpdates` in a browser.
+3. Copy the numeric `chat.id` from the JSON response — that is your **chat id**.
+
+### 3. Configure claude-notify
+
+Store the credentials in the config file:
+
+```bash
+claude-notify config set telegram_enabled true
+claude-notify config set telegram_bot_token 123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11
+claude-notify config set telegram_chat_id 123456789
+```
+
+To keep the secret out of the config file, leave `telegram_bot_token` /
+`telegram_chat_id` empty and provide them through environment variables instead.
+The config file takes precedence — an environment variable is read only when the
+matching config value is empty — so this works only while the config values stay
+empty. You still need `telegram_enabled true` in the config to turn the channel
+on:
+
+```bash
+claude-notify config set telegram_enabled true
+export TELEGRAM_BOT_TOKEN="123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11"
+export TELEGRAM_CHAT_ID="123456789"
+```
+
+The bot token is treated as a secret: it is never printed and is shown masked
+(`***`) in `config show` and `config set` output.
+
+### 4. Use it
+
+```bash
+# One-off: also deliver this notification to Telegram
+claude-notify send --title "Build done" --message "All tests passed" --telegram
+
+# Verify the channel (reports enabled / configured / reachable, token masked)
+claude-notify check
+
+# Try the example (prints "not configured" cleanly if no credentials are set)
+python examples/telegram_example.py
+```
+
+When `telegram_enabled` is true, the `watch` loop and Claude `hook` events also
+fan out to Telegram, in addition to desktop notifications. A Telegram failure is
+best-effort and never blocks Claude or your desktop alerts.
 
 ## Platform-specific Notes
 

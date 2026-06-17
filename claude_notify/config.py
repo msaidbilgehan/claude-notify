@@ -34,7 +34,10 @@ def get_default_config() -> Dict[str, Any]:
         "interval": 300,
         "title": "Claude needs your attention",
         "message": "Claude is waiting for your response",
-        "app_name": "Claude"
+        "app_name": "Claude",
+        "telegram_enabled": False,
+        "telegram_bot_token": "",
+        "telegram_chat_id": ""
     }
 
 
