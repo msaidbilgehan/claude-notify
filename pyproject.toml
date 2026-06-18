@@ -7,7 +7,7 @@ name = "claude-notify"
 dynamic = ["version"]
 description = "Cross-platform notification system for Claude Code hooks with intelligent project detection"
 readme = "README.md"
-requires-python = ">=3.7"
+requires-python = ">=3.11"
 license = {text = "MIT"}
 authors = [
     {name = "jamez01", email = "james@example.com"}
@@ -20,10 +20,6 @@ classifiers = [
     "Topic :: System :: Monitoring",
     "Topic :: Communications",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.7",
-    "Programming Language :: Python :: 3.8",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "License :: OSI Approved :: MIT License",
@@ -68,10 +64,10 @@ target-version = "py311"
 line-length = 88
 
 [tool.ruff.lint]
-# Start from ruff's default rules (pyflakes + a safe pycodestyle subset), which
-# catch real defects (unused imports, undefined names). Broaden to "I", "UP",
-# "B" and the full "E"/"W" sets after a one-off formatting pass — those flag
-# pre-existing import order/whitespace style across every module.
+# Full pycodestyle (E/W) + pyflakes (F) + import sorting (I) + bugbear (B).
+# "UP" (pyupgrade) is intentionally excluded: the project keeps the explicit
+# typing.Optional/Dict style (see CLAUDE.md) rather than PEP 604 syntax.
+select = ["E", "W", "F", "I", "B"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
