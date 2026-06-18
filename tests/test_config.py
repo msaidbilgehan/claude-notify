@@ -42,3 +42,20 @@ def test_load_returns_defaults_on_corrupt_file(config_file):
     config_file.write_text("bad: [1, 2\n")  # invalid YAML
 
     assert config.load_config() == config.get_default_config()
+
+
+def test_coerce_parses_integer_keys():
+    assert config.coerce_config_value("timeout", "42") == 42
+    assert config.coerce_config_value("interval", "300") == 300
+
+
+def test_coerce_parses_boolean_keys():
+    # Regression: desktop_enabled must become a real bool, not a truthy string.
+    assert config.coerce_config_value("desktop_enabled", "false") is False
+    assert config.coerce_config_value("telegram_enabled", "true") is True
+    assert config.coerce_config_value("sound", "off") is False
+
+
+def test_coerce_passes_through_strings_and_unknown_keys():
+    assert config.coerce_config_value("telegram_bot_token", "secret") == "secret"
+    assert config.coerce_config_value("not_a_real_key", "x") == "x"

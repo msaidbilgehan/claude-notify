@@ -1,15 +1,24 @@
 """Command-line interface for Claude Notify"""
 
-import click
-import time
+import json
 import sys
+import time
 from pathlib import Path
 from typing import Optional
+
+import click
+
 from . import __version__
-from .notifier import ClaudeNotifier, TelegramNotifier, build_telegram_notifier
-from .config import load_config, save_config, get_default_config
+from .config import (
+    coerce_config_value,
+    get_default_config,
+    load_config,
+    save_config,
+)
 from .hook_handler import HookHandler
+from .notifier import ClaudeNotifier
 from .session_monitor import ClaudeSessionMonitor
+from .telegram import TelegramNotifier, build_telegram_notifier
 
 
 @click.group()
@@ -123,30 +132,32 @@ def watch(interval: int, all_projects: bool, verbose: bool):
     config = load_config()
     notifier = ClaudeNotifier()
     telegram = build_telegram_notifier(config)
+    desktop_enabled = config.get("desktop_enabled", True)
     monitor = ClaudeSessionMonitor()
-    
+
     # Track which sessions we've already notified about
     notified_sessions = set()
-    
+
+    scope = "All projects" if all_projects else "Current project only"
     click.echo("🔍 Starting Claude session monitor...")
-    click.echo(f"📁 Monitoring: {'All projects' if all_projects else 'Current project only'}")
+    click.echo(f"📁 Monitoring: {scope}")
     click.echo(f"⏱️  Check interval: {interval} seconds")
     click.echo("Press Ctrl+C to stop\n")
-    
+
     try:
         while True:
             # Check for sessions needing attention
             sessions = monitor.check_sessions()
-            
+
             # Filter to current project if not monitoring all
             if not all_projects and sessions:
                 cwd = str(Path.cwd())
                 sessions = [s for s in sessions if s["project_path"] == cwd]
-            
+
             # Process sessions needing attention
             for session in sessions:
                 session_key = session["transcript_path"]
-                
+
                 # Only notify once per session unless it changes again
                 if session_key not in notified_sessions:
                     # Send notification
@@ -162,44 +173,56 @@ def watch(interval: int, all_projects: bool, verbose: bool):
                         "critical" if "question" in reason.lower() else "normal"
                     )
 
-                    success = notifier.send_notification(
-                        title=title,
-                        message=message,
-                        urgency=urgency,
-                        timeout=config.get("timeout", 10),
-                        sound=config.get("sound", True)
-                    )
+                    # Desktop is gated by config; Telegram is best-effort.
+                    # "success" means at least one channel delivered.
+                    desktop_success = False
+                    if desktop_enabled:
+                        desktop_success = notifier.send_notification(
+                            title=title,
+                            message=message,
+                            urgency=urgency,
+                            timeout=config.get("timeout", 10),
+                            sound=config.get("sound", True)
+                        )
 
-                    # Fan out to Telegram when enabled (best-effort)
+                    telegram_success = False
                     if telegram is not None:
-                        telegram.send_notification(
+                        telegram_success = telegram.send_notification(
                             title=title, message=message, urgency=urgency
                         )
 
+                    success = desktop_success or telegram_success
+                    timestamp = time.strftime("%H:%M:%S")
                     if success:
                         notified_sessions.add(session_key)
-                        click.echo(f"🔔 [{time.strftime('%H:%M:%S')}] Notification sent for {project_name}: {reason}")
+                        click.echo(
+                            f"🔔 [{timestamp}] Notification sent for "
+                            f"{project_name}: {reason}"
+                        )
                     else:
-                        click.echo(f"❌ [{time.strftime('%H:%M:%S')}] Failed to send notification for {project_name}")
-                    
+                        click.echo(
+                            f"❌ [{timestamp}] Failed to send notification "
+                            f"for {project_name}"
+                        )
+
                     if verbose:
                         click.echo(f"   📄 Transcript: {session['transcript_path']}")
                         click.echo(f"   🕐 Last update: {session['last_update']}")
-            
+
             # Clear notified sessions if their state changes (file modified again)
             current_states = monitor.transcript_states
             notified_sessions = {
                 session for session in notified_sessions
-                if session in current_states and 
+                if session in current_states and
                 current_states[session].get("needs_attention", False)
             }
-            
+
             if verbose and not sessions:
                 click.echo(f"[{time.strftime('%H:%M:%S')}] No sessions need attention")
-            
+
             # Wait for next check
             time.sleep(interval)
-            
+
     except KeyboardInterrupt:
         click.echo("\n\n✋ Stopping watch mode...")
         click.echo(f"📊 Monitored {len(monitor.transcript_states)} session(s)")
@@ -211,7 +234,7 @@ def check():
     """Check notification system dependencies"""
     notifier = ClaudeNotifier()
     deps = notifier.check_dependencies()
-    
+
     click.echo("Claude Notify System Check")
     click.echo("=" * 30)
     click.echo(f"Operating System: {notifier.system}")
@@ -244,7 +267,7 @@ def check():
         message="This is a test notification",
         timeout=5
     )
-    
+
     if success:
         click.echo("✓ Test notification sent successfully")
     else:
@@ -273,21 +296,18 @@ def config_show():
 @config.command("set")
 @click.argument("key")
 @click.argument("value")
-def config_set(key: str, value: str):
+def config_set(key: str, value: str) -> None:
     """Set a configuration value"""
     config_data = load_config()
-    
-    # Convert value types
-    if key in ["timeout", "interval"]:
-        value = int(value)
-    elif key in ["sound", "telegram_enabled"]:
-        value = value.lower() in ["true", "yes", "1", "on"]
 
-    config_data[key] = value
+    # Coerce the text argument to the type the key expects (bool/int) so the
+    # persisted config keeps native types.
+    coerced = coerce_config_value(key, value)
+    config_data[key] = coerced
     save_config(config_data)
 
     # Never echo the bot token back (SEC_SENSITIVE_LOG).
-    display_value = "***" if key == "telegram_bot_token" and value else value
+    display_value = "***" if key == "telegram_bot_token" and coerced else coerced
     click.echo(f"✓ Set {key} = {display_value}")
 
 
@@ -301,22 +321,31 @@ def config_reset():
 @cli.command()
 @click.option(
     "--event-type", "-e",
-    help="Override the event type (PreToolUse, PostToolUse, Notification, Stop, SubagentStop)"
+    help="Override the event type (PreToolUse, PostToolUse, Notification, "
+         "Stop, SubagentStop)"
 )
 @click.option(
     "--test", "-t",
     is_flag=True,
     help="Test mode - read from test.json file instead of stdin"
 )
-def hook(event_type: Optional[str], test: bool):
+@click.option(
+    "--desktop/--no-desktop",
+    "desktop",
+    default=None,
+    help="Force the desktop channel on/off for this invocation, overriding "
+         "the 'desktop_enabled' config value. Use --no-desktop for a "
+         "Telegram-only hook."
+)
+def hook(event_type: Optional[str], test: bool, desktop: Optional[bool]):
     """
     Process Claude Code hook events from JSON input
-    
+
     This command reads JSON from stdin and sends notifications based on the hook event.
     It's designed to be used in Claude Code hook configurations.
-    
+
     Example usage in settings.json:
-    
+
     \b
     {
       "hooks": {
@@ -330,12 +359,20 @@ def hook(event_type: Optional[str], test: bool):
       }
     }
     """
-    handler = HookHandler(telegram=build_telegram_notifier(load_config()))
+    config_data = load_config()
+    # --desktop/--no-desktop overrides config when set; otherwise fall back to
+    # the 'desktop_enabled' config value (default on).
+    desktop_enabled = (
+        config_data.get("desktop_enabled", True) if desktop is None else desktop
+    )
+    handler = HookHandler(
+        telegram=build_telegram_notifier(config_data),
+        desktop_enabled=desktop_enabled
+    )
 
     if test:
         # Test mode - read from file
         try:
-            import json
             with open("test.json", "r") as f:
                 data = json.load(f)
         except FileNotFoundError:
@@ -350,22 +387,24 @@ def hook(event_type: Optional[str], test: bool):
         if not data:
             click.echo("Error: No JSON data received from stdin", err=True)
             sys.exit(1)
-    
+
     # Determine event type
     if not event_type:
         event_type = handler.determine_event_type(data)
         if not event_type:
             click.echo("Error: Could not determine event type from JSON data", err=True)
-            click.echo("Use --event-type to specify the event type explicitly", err=True)
+            click.echo(
+                "Use --event-type to specify the event type explicitly", err=True
+            )
             sys.exit(1)
-    
+
     # Process the hook event
     success = handler.process_hook_event(event_type, data)
-    
+
     if not success:
         click.echo("Warning: Failed to send notification", err=True)
         # Don't exit with error code to avoid blocking Claude operations
-    
+
     # Exit successfully to not block Claude
     sys.exit(0)
 

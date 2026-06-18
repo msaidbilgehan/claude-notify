@@ -14,6 +14,21 @@ class RecordingNotifier:
         return True
 
 
+class RecordingTelegram:
+    """Telegram double that records sends instead of calling the Bot API."""
+
+    def __init__(self, configured: bool = True) -> None:
+        self.calls: list[dict] = []
+        self._configured = configured
+
+    def is_configured(self) -> bool:
+        return self._configured
+
+    def send_notification(self, **kwargs) -> bool:
+        self.calls.append(kwargs)
+        return True
+
+
 def make_handler() -> tuple[HookHandler, RecordingNotifier]:
     notifier = RecordingNotifier()
     return HookHandler(notifier=notifier), notifier
@@ -91,3 +106,39 @@ def test_unknown_event_sends_generic_notification():
 
     assert sent is True
     assert notifier.calls[-1]["title"] == "Claude Event"
+
+
+def test_telegram_fans_out_alongside_desktop_by_default():
+    desktop = RecordingNotifier()
+    telegram = RecordingTelegram()
+    handler = HookHandler(notifier=desktop, telegram=telegram)
+
+    sent = handler.process_hook_event("Stop", {"session_id": "abc"})
+
+    assert sent is True
+    assert len(desktop.calls) == 1
+    assert len(telegram.calls) == 1
+
+
+def test_desktop_disabled_suppresses_desktop_but_still_sends_telegram():
+    desktop = RecordingNotifier()
+    telegram = RecordingTelegram()
+    handler = HookHandler(
+        notifier=desktop, telegram=telegram, desktop_enabled=False
+    )
+
+    sent = handler.process_hook_event("Stop", {"session_id": "abc"})
+
+    assert sent is True
+    assert desktop.calls == []  # desktop channel suppressed
+    assert len(telegram.calls) == 1  # telegram still notified
+
+
+def test_desktop_disabled_without_telegram_reports_no_delivery():
+    desktop = RecordingNotifier()
+    handler = HookHandler(notifier=desktop, desktop_enabled=False)
+
+    sent = handler.process_hook_event("Stop", {"session_id": "abc"})
+
+    assert sent is False  # no channel delivered
+    assert desktop.calls == []
