@@ -14,9 +14,10 @@ Implemented and released as **v0.1.1**. The version is single-sourced in
 
 ## Tech Stack & Conventions
 
-- **Python**, 3.7-compatible typing style: use `typing.Optional/Dict/Any`. Do
-  **not** use PEP 604 (`X | None`) unions or `from __future__ import annotations`.
-  Tooling (ruff/mypy) targets py311.
+- **Python 3.11+** (`requires-python = ">=3.11"`; CI runs 3.11 and 3.12). Keep the
+  established conservative typing style for consistency: use
+  `typing.Optional/Dict/Any` rather than PEP 604 (`X | None`) unions, and avoid
+  `from __future__ import annotations`. Tooling (ruff/mypy) targets py311.
 - **Click** (CLI), **plyer** (desktop-notification fallback), **PyYAML** (config).
 - Diagnostics go through the **`logging`** module
   (`logger = logging.getLogger(__name__)`) — do not add `print` to package code.
@@ -91,12 +92,18 @@ The application is designed to work as a Claude Code hook. Key features:
 
 ### Notification Channels
 
-- **Desktop** (`ClaudeNotifier`): macOS `osascript`, Linux `notify-send`, Windows
-  PowerShell toast, with a plyer fallback. Untrusted text is passed as `argv` /
-  environment variables, never interpolated into the script — this is an injection
-  fix (`b906958`); do not "simplify" it back to string interpolation.
-- **Telegram** (`TelegramNotifier`, opt-in): outbound-only via the Bot API over
-  stdlib `urllib`; enabled by `telegram_enabled` in config.
+- **Desktop** (`ClaudeNotifier` in `notifier.py`): macOS `osascript`, Linux
+  `notify-send`, Windows PowerShell toast, with a plyer fallback. Untrusted text is
+  passed as `argv` / environment variables, never interpolated into the script —
+  this is an injection fix (`b906958`); do not "simplify" it back to string
+  interpolation.
+- **Telegram** (`TelegramNotifier` in `telegram.py`, opt-in): outbound-only via the
+  Bot API over stdlib `urllib`; enabled by `telegram_enabled` in config.
+- **Channel selection**: the hook fans out to every *enabled* channel via
+  `HookHandler._dispatch` and returns success if any channel delivered. Desktop is
+  gated by `desktop_enabled` (config) or the per-invocation
+  `claude-notify hook --desktop/--no-desktop` override — use `--no-desktop` for a
+  Telegram-only hook.
 
 **Credential precedence (gotcha):** for the Telegram token/chat id, a non-empty
 config value wins; `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` are only a fallback
@@ -108,14 +115,15 @@ must never be logged.
 claude-notify/
 ├── claude_notify/
 │   ├── __init__.py          # Public API + single-source __version__
-│   ├── notifier.py          # ClaudeNotifier (desktop) + TelegramNotifier + build_telegram_notifier
+│   ├── notifier.py          # ClaudeNotifier (desktop channel)
+│   ├── telegram.py          # TelegramNotifier + build_telegram_notifier (opt-in channel)
 │   ├── cli.py               # Click CLI: send, watch, hook, check, config
 │   ├── config.py            # YAML config: get_default_config / load_config / save_config
 │   ├── hook_handler.py      # Claude hook event → notification routing
 │   └── session_monitor.py   # Transcript watching for `watch` mode
 ├── tests/                   # pytest suite (test_*.py per module)
 ├── examples/                # Demos: example_usage.py, telegram_example.py, test-*.py
-├── .github/workflows/ci.yml # CI: ruff + pytest
+├── .github/workflows/ci.yml # CI: ruff + pytest + mypy
 ├── pyproject.toml           # Packaging, deps, ruff/pytest/mypy config
 ├── requirements.txt         # Runtime dependencies
 └── README.md

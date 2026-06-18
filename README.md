@@ -125,6 +125,8 @@ echo '{"tool_name": "Bash", "tool_input": {"command": "ls"}}' | claude-notify ho
 # Hook command options:
 # --event-type, -e: Override event type detection
 # --test, -t: Read from test.json instead of stdin
+# --desktop / --no-desktop: Force the desktop channel on/off (default: config
+#   'desktop_enabled'); use --no-desktop for a Telegram-only hook
 ```
 
 #### Project Path Display
@@ -211,6 +213,7 @@ Available options:
 - `interval`: Watch mode check interval in seconds (default: 300)
 - `title`: Default notification title
 - `message`: Default notification message
+- `desktop_enabled`: Send desktop notifications (default: true; set false for a Telegram-only setup)
 - `telegram_enabled`: Also send notifications to Telegram (default: false)
 - `telegram_bot_token`: Telegram bot token from @BotFather (secret; shown masked)
 - `telegram_chat_id`: Destination Telegram chat id
@@ -282,6 +285,10 @@ python examples/telegram_example.py
 When `telegram_enabled` is true, the `watch` loop and Claude `hook` events also
 fan out to Telegram, in addition to desktop notifications. A Telegram failure is
 best-effort and never blocks Claude or your desktop alerts.
+
+For a **Telegram-only** setup, suppress the desktop channel with
+`claude-notify config set desktop_enabled false` (global) or, per hook,
+`claude-notify hook --no-desktop`.
 
 ## Platform-specific Notes
 
