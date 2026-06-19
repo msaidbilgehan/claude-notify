@@ -6,9 +6,11 @@
 __version__ = "0.1.1"
 __author__ = "jamez01"
 
-from .notifier import ClaudeNotifier, TelegramNotifier, build_telegram_notifier
 from .hook_handler import HookHandler
+from .notifier import ClaudeNotifier
 from .session_monitor import ClaudeSessionMonitor
+from .telegram import TelegramNotifier, build_telegram_notifier
+from .transcript import SessionSummary, format_preview, summarize_transcript
 
 __all__ = [
     "ClaudeNotifier",
@@ -16,4 +18,7 @@ __all__ = [
     "build_telegram_notifier",
     "HookHandler",
     "ClaudeSessionMonitor",
+    "SessionSummary",
+    "summarize_transcript",
+    "format_preview",
 ]

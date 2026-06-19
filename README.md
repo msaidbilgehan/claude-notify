@@ -20,14 +20,18 @@ A simple, cross-platform notification system to alert you when Claude needs your
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/claude-notify.git
+git clone https://github.com/msaidbilgehan/claude-notify.git
 cd claude-notify
 
-# Install dependencies
-pip install -r requirements.txt
+# Recommended: build + install the CLI as a uv tool (runs the test/lint gate
+# first, then an editable install so later edits are live).
+scripts/build-install.sh            # editable (default)
+scripts/build-install.sh --wheel    # or build + install a pinned wheel
+scripts/build-install.sh --help     # all options
 
-# Install the package
-pip install -e .
+# Or with pip
+pip install -r requirements.txt     # dependencies
+pip install -e .                    # the package
 ```
 
 ### Using pip (when published)
@@ -125,13 +129,27 @@ echo '{"tool_name": "Bash", "tool_input": {"command": "ls"}}' | claude-notify ho
 # Hook command options:
 # --event-type, -e: Override event type detection
 # --test, -t: Read from test.json instead of stdin
+# --desktop / --no-desktop: Force the desktop channel on/off (default: config
+#   'desktop_enabled'); use --no-desktop for a Telegram-only hook
 ```
 
 #### Project Path Display
 
-For ALL hook events, claude-notify automatically extracts and displays:
-- **Project name** in the notification title (e.g., "Claude Tool Request - my-project", "Claude Response Complete - my-project")
-- **Full project path** in the notification message (e.g., "Project: my-project (/home/user/projects/my-project)")
+For ALL hook events, claude-notify identifies the project from the session's
+working directory (`cwd`) and displays:
+- **Project name** in the notification title (e.g., "⚠️ Claude Tool Request · my-project", "✅ Response complete · my-project")
+- **Full project path** in the notification body (e.g., "📁 /home/user/projects/my-project")
+
+On completion (`Stop`/`SubagentStop`), the body also includes Claude's last
+response and how long the turn took:
+
+```
+✅ Response complete · my-project
+Done — added the export and updated the tests.
+
+⏱ 2m 14s
+📁 /home/user/projects/my-project
+```
 
 This helps you identify which Claude session/project needs your attention when working on multiple projects, regardless of the event type.
 
@@ -169,10 +187,11 @@ cd /path/to/project && claude-notify watch
 ```
 
 Watch mode features:
-- **Real-time monitoring** of Claude transcript files
-- **Smart detection** of when Claude needs your input
-- **Project-aware** notifications showing which project needs attention
-- **Pattern matching** for questions, waiting states, and errors
+- **Real-time monitoring** of the JSONL transcripts under every
+  `~/.claude*/projects/` tree (recent sessions only; changed files only)
+- **Smart detection**: alerts only when Claude is awaiting you (it spoke last)
+  **and** its final message asks a question, makes a request, or reports an error
+- **Project-aware** notifications naming the project from its working directory
 - **One-time notifications** per session (won't spam you)
 
 ### Configuration
@@ -211,6 +230,7 @@ Available options:
 - `interval`: Watch mode check interval in seconds (default: 300)
 - `title`: Default notification title
 - `message`: Default notification message
+- `desktop_enabled`: Send desktop notifications (default: true; set false for a Telegram-only setup)
 - `telegram_enabled`: Also send notifications to Telegram (default: false)
 - `telegram_bot_token`: Telegram bot token from @BotFather (secret; shown masked)
 - `telegram_chat_id`: Destination Telegram chat id
@@ -283,6 +303,10 @@ When `telegram_enabled` is true, the `watch` loop and Claude `hook` events also
 fan out to Telegram, in addition to desktop notifications. A Telegram failure is
 best-effort and never blocks Claude or your desktop alerts.
 
+For a **Telegram-only** setup, suppress the desktop channel with
+`claude-notify config set desktop_enabled false` (global) or, per hook,
+`claude-notify hook --no-desktop`.
+
 ## Platform-specific Notes
 
 ### macOS
@@ -301,11 +325,14 @@ best-effort and never blocks Claude or your desktop alerts.
 ## Development
 
 ```bash
-# Install in development mode
-pip install -e .
+# Install in development mode (with dev tools: pytest, ruff, mypy)
+pip install -e ".[dev]"
 
-# Run tests (when implemented)
-python -m pytest
+# Run the test suite
+pytest
+
+# Lint
+ruff check .
 ```
 
 ## License

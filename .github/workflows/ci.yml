@@ -30,13 +30,10 @@ jobs:
           pip install plyer click pyyaml pytest ruff mypy types-PyYAML
 
       - name: Lint (ruff)
-        run: ruff check claude_notify tests
+        run: ruff check .
 
       - name: Test (pytest)
         run: pytest
 
       - name: Type check (mypy)
-        # Informational until the existing modules are fully annotated; flip to a
-        # gating step (remove continue-on-error) once mypy is clean.
         run: mypy claude_notify
-        continue-on-error: true

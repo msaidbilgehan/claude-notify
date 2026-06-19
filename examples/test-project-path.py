@@ -1,21 +1,26 @@
 #!/usr/bin/env python3
 """Test project path extraction from transcript paths"""
 
-import sys
 import os
+import sys
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from claude_notify.hook_handler import HookHandler
 
+
 def test_project_path_extraction():
     handler = HookHandler()
-    
+
     # Test cases for different transcript path formats
     test_cases = [
         {
             "name": "Standard Claude project path",
             "data": {
-                "transcript_path": "/home/james/projects/misc/claude-notify/.claude/tmp/test-session-123/transcript.txt",
+                "transcript_path": (
+                    "/home/james/projects/misc/claude-notify/.claude/tmp/"
+                    "test-session-123/transcript.txt"
+                ),
                 "session_id": "test-session-123"
             },
             "expected_project": "claude-notify"
@@ -23,7 +28,9 @@ def test_project_path_extraction():
         {
             "name": "Global Claude session (home directory)",
             "data": {
-                "transcript_path": "/home/james/.claude/tmp/test-session-456/transcript.txt",
+                "transcript_path": (
+                    "/home/james/.claude/tmp/test-session-456/transcript.txt"
+                ),
                 "session_id": "test-session-456"
             },
             "expected_project": "fallback"  # Should use fallback logic
@@ -31,7 +38,9 @@ def test_project_path_extraction():
         {
             "name": "Different project structure",
             "data": {
-                "transcript_path": "/Users/dev/workspace/my-app/.claude/tmp/abc123/transcript.txt",
+                "transcript_path": (
+                    "/Users/dev/workspace/my-app/.claude/tmp/abc123/transcript.txt"
+                ),
                 "session_id": "abc123"
             },
             "expected_project": "my-app"
@@ -39,7 +48,10 @@ def test_project_path_extraction():
         {
             "name": "Nested project path",
             "data": {
-                "transcript_path": "/home/user/Documents/projects/web/frontend/.claude/tmp/xyz789/transcript.txt",
+                "transcript_path": (
+                    "/home/user/Documents/projects/web/frontend/.claude/tmp/"
+                    "xyz789/transcript.txt"
+                ),
                 "session_id": "xyz789"
             },
             "expected_project": "frontend"
@@ -68,17 +80,17 @@ def test_project_path_extraction():
             "expected_project": "fallback"  # Should use fallback
         }
     ]
-    
+
     print("Testing project path extraction:")
     print("=" * 50)
-    
+
     for test_case in test_cases:
         print(f"\nTest: {test_case['name']}")
         print(f"Path: {test_case['data'].get('transcript_path', 'N/A')}")
-        
+
         project_info = handler._extract_project_info(test_case['data'])
         print(f"Result: {project_info}")
-        
+
         if test_case['expected_project'] == "fallback":
             # For fallback cases, just check that we got some project info
             if project_info and project_info != "Unknown Project":
@@ -98,15 +110,18 @@ def test_project_path_extraction():
 
 def test_notification_format():
     handler = HookHandler()
-    
+
     print("\n\nTesting notification format for all event types:")
     print("=" * 50)
-    
+
     base_data = {
         "session_id": "test-session-123",
-        "transcript_path": "/home/james/projects/misc/claude-notify/.claude/tmp/test-session-123/transcript.txt"
+        "transcript_path": (
+            "/home/james/projects/misc/claude-notify/.claude/tmp/"
+            "test-session-123/transcript.txt"
+        )
     }
-    
+
     # Test all event types to ensure they include project info
     event_tests = [
         {
@@ -114,7 +129,7 @@ def test_notification_format():
             "data": base_data.copy()
         },
         {
-            "event_type": "Notification", 
+            "event_type": "Notification",
             "data": {**base_data, "notification_type": "info"}
         },
         {
@@ -127,21 +142,26 @@ def test_notification_format():
         },
         {
             "event_type": "PostToolUse",
-            "data": {**base_data, "tool_name": "Bash", "tool_input": {"command": "ls"}, "tool_response": {"status": "success"}}
+            "data": {
+                **base_data,
+                "tool_name": "Bash",
+                "tool_input": {"command": "ls"},
+                "tool_response": {"status": "success"},
+            }
         }
     ]
-    
+
     for test in event_tests:
         print(f"\nTesting {test['event_type']} event notification format...")
         success = handler.process_hook_event(test['event_type'], test['data'])
         print(f"Notification sent: {'✓' if success else '✗'}")
-        
+
         # Verify project info is extracted
         project_info = handler._extract_project_info(test['data'])
         if project_info and "claude-notify" in project_info:
             print(f"Project info included: ✓ ({project_info})")
         else:
-            print(f"Project info missing: ✗")
+            print("Project info missing: ✗")
 
 if __name__ == "__main__":
     test_project_path_extraction()

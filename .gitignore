@@ -137,3 +137,5 @@ Thumbs.db
 config.yaml
 *.log
 .claude/plans/
+.claude/settings.local.json
+.claude/locks/
