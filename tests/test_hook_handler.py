@@ -1,5 +1,7 @@
 """Behaviour tests for hook event handling."""
 
+from datetime import timedelta
+
 from claude_notify.hook_handler import HookHandler
 
 
@@ -105,7 +107,8 @@ def test_unknown_event_sends_generic_notification():
     sent = handler.process_hook_event("Mystery", {})
 
     assert sent is True
-    assert notifier.calls[-1]["title"] == "Claude Event"
+    # The project name is appended for context, so match the stable prefix.
+    assert notifier.calls[-1]["title"].startswith("Claude Event")
 
 
 def test_telegram_fans_out_alongside_desktop_by_default():
@@ -142,3 +145,83 @@ def test_desktop_disabled_without_telegram_reports_no_delivery():
 
     assert sent is False  # no channel delivered
     assert desktop.calls == []
+
+
+# A minimal but representative transcript: a meta entry, a genuine prompt, an
+# assistant turn that calls a tool, the tool result, and the final answer.
+_TRANSCRIPT_LINES = [
+    '{"type":"user","isMeta":true,"cwd":"/work/proj",'
+    '"timestamp":"2026-06-19T10:00:00.000Z",'
+    '"message":{"role":"user","content":"<caveat/>"}}',
+    '{"type":"user","cwd":"/work/proj","timestamp":"2026-06-19T10:00:05.000Z",'
+    '"message":{"role":"user","content":[{"type":"text","text":"Do the thing"}]}}',
+    '{"type":"assistant","cwd":"/work/proj","timestamp":"2026-06-19T10:00:10.000Z",'
+    '"message":{"role":"assistant","content":[{"type":"tool_use","name":"Bash"}]}}',
+    '{"type":"user","cwd":"/work/proj","timestamp":"2026-06-19T10:00:12.000Z",'
+    '"toolUseResult":{"ok":true},'
+    '"message":{"role":"user","content":[{"type":"tool_result"}]}}',
+    '{"type":"assistant","cwd":"/work/proj","timestamp":"2026-06-19T10:02:35.000Z",'
+    '"message":{"role":"assistant",'
+    '"content":[{"type":"text","text":"All done. The answer is 42."}]}}',
+    '{"type":"ai-title","aiTitle":"Do the thing","sessionId":"x"}',
+]
+
+
+def _write_transcript(tmp_path) -> str:
+    path = tmp_path / "0a1b2c3d-session.jsonl"
+    path.write_text("\n".join(_TRANSCRIPT_LINES), encoding="utf-8")
+    return str(path)
+
+
+def test_stop_event_reports_response_duration_and_real_project(tmp_path):
+    handler, notifier = make_handler()
+    transcript = _write_transcript(tmp_path)
+
+    sent = handler.process_hook_event(
+        "Stop", {"session_id": "x", "transcript_path": transcript}
+    )
+
+    assert sent is True
+    call = notifier.calls[-1]
+    # Project comes from the transcript's cwd, not the session filename.
+    assert call["title"].startswith("✅ Response complete")
+    assert "proj" in call["title"]
+    assert "All done. The answer is 42." in call["message"]
+    assert "2m 30s" in call["message"]  # 10:00:05 prompt -> 10:02:35 reply
+    assert "📁 /work/proj" in call["message"]
+    # Regression: the opaque session filename must not leak into the message.
+    assert ".jsonl" not in call["message"]
+    assert "session" not in call["message"]
+
+
+def test_stop_event_prefers_payload_cwd_over_transcript(tmp_path):
+    handler, notifier = make_handler()
+    transcript = _write_transcript(tmp_path)
+
+    handler.process_hook_event(
+        "Stop",
+        {"session_id": "x", "transcript_path": transcript, "cwd": "/explicit/myapp"},
+    )
+
+    call = notifier.calls[-1]
+    assert "myapp" in call["title"]
+    assert "📁 /explicit/myapp" in call["message"]
+
+
+def test_stop_event_without_transcript_still_names_project(tmp_path, monkeypatch):
+    handler, notifier = make_handler()
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("PWD", raising=False)
+
+    sent = handler.process_hook_event("Stop", {"session_id": "abc"})
+
+    assert sent is True
+    call = notifier.calls[-1]
+    assert call["title"].startswith("✅ Response complete")
+    assert tmp_path.name in call["title"]
+
+
+def test_format_duration_scales_units():
+    assert HookHandler._format_duration(timedelta(seconds=45)) == "45s"
+    assert HookHandler._format_duration(timedelta(seconds=150)) == "2m 30s"
+    assert HookHandler._format_duration(timedelta(hours=1, minutes=4)) == "1h 4m"

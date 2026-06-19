@@ -19,6 +19,7 @@ from .hook_handler import HookHandler
 from .notifier import ClaudeNotifier
 from .session_monitor import ClaudeSessionMonitor
 from .telegram import TelegramNotifier, build_telegram_notifier
+from .transcript import format_preview
 
 
 @click.group()
@@ -164,11 +165,18 @@ def watch(interval: int, all_projects: bool, verbose: bool):
                     project_name = session["project"]
                     reason = session["reason"]
 
-                    title = f"Claude needs attention - {project_name}"
-                    message = (
-                        f"{reason}\nProject: {project_name} "
-                        f"({session['project_path']})"
-                    )
+                    title = f"🔔 {reason}"
+                    if project_name:
+                        title = f"{title} · {project_name}"
+
+                    body = []
+                    last_response = session.get("last_response")
+                    if last_response:
+                        body.append(format_preview(last_response))
+                        body.append("")  # blank line before the project path
+                    body.append(f"📁 {session['project_path']}")
+                    message = "\n".join(body)
+
                     urgency = (
                         "critical" if "question" in reason.lower() else "normal"
                     )
