@@ -23,11 +23,15 @@ A simple, cross-platform notification system to alert you when Claude needs your
 git clone https://github.com/msaidbilgehan/claude-notify.git
 cd claude-notify
 
-# Install dependencies
-pip install -r requirements.txt
+# Recommended: build + install the CLI as a uv tool (runs the test/lint gate
+# first, then an editable install so later edits are live).
+scripts/build-install.sh            # editable (default)
+scripts/build-install.sh --wheel    # or build + install a pinned wheel
+scripts/build-install.sh --help     # all options
 
-# Install the package
-pip install -e .
+# Or with pip
+pip install -r requirements.txt     # dependencies
+pip install -e .                    # the package
 ```
 
 ### Using pip (when published)
@@ -131,9 +135,21 @@ echo '{"tool_name": "Bash", "tool_input": {"command": "ls"}}' | claude-notify ho
 
 #### Project Path Display
 
-For ALL hook events, claude-notify automatically extracts and displays:
-- **Project name** in the notification title (e.g., "Claude Tool Request - my-project", "Claude Response Complete - my-project")
-- **Full project path** in the notification message (e.g., "Project: my-project (/home/user/projects/my-project)")
+For ALL hook events, claude-notify identifies the project from the session's
+working directory (`cwd`) and displays:
+- **Project name** in the notification title (e.g., "⚠️ Claude Tool Request · my-project", "✅ Response complete · my-project")
+- **Full project path** in the notification body (e.g., "📁 /home/user/projects/my-project")
+
+On completion (`Stop`/`SubagentStop`), the body also includes Claude's last
+response and how long the turn took:
+
+```
+✅ Response complete · my-project
+Done — added the export and updated the tests.
+
+⏱ 2m 14s
+📁 /home/user/projects/my-project
+```
 
 This helps you identify which Claude session/project needs your attention when working on multiple projects, regardless of the event type.
 
@@ -171,10 +187,11 @@ cd /path/to/project && claude-notify watch
 ```
 
 Watch mode features:
-- **Real-time monitoring** of Claude transcript files
-- **Smart detection** of when Claude needs your input
-- **Project-aware** notifications showing which project needs attention
-- **Pattern matching** for questions, waiting states, and errors
+- **Real-time monitoring** of the JSONL transcripts under every
+  `~/.claude*/projects/` tree (recent sessions only; changed files only)
+- **Smart detection**: alerts only when Claude is awaiting you (it spoke last)
+  **and** its final message asks a question, makes a request, or reports an error
+- **Project-aware** notifications naming the project from its working directory
 - **One-time notifications** per session (won't spam you)
 
 ### Configuration

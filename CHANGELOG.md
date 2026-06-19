@@ -12,6 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add opt-in Telegram channel that mirrors desktop alerts via the Telegram Bot API (a285980)
 - Add a Telegram-only mode: the `desktop_enabled` config key and the
   `claude-notify hook --no-desktop` flag suppress the desktop channel
+- Summarise the transcript on `Stop`/`SubagentStop`: completion notifications
+  now report Claude's last response and the turn duration alongside the project
+  name and path (new `claude_notify.transcript` module)
+- Add `scripts/build-install.sh`: runs the ruff/mypy/pytest gate, then installs
+  the CLI as a uv tool — editable by default, `--wheel` for a pinned build
 
 ### Changed
 
@@ -30,6 +35,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Correct the `check_dependencies` return type and read transcript tails with
   bounded memory
+- Derive the project name and path from the session `cwd` rather than the
+  transcript filename, so notifications no longer surface the opaque
+  `<session>.jsonl` id (and its full path) under the `~/.claude*/projects/`
+  layout
+- Fix `watch` mode for the current transcript layout: it now polls the JSONL
+  transcripts under every `~/.claude*/projects/` tree (and `$CLAUDE_CONFIG_DIR`)
+  instead of the long-gone `~/.claude/tmp/<id>/transcript.txt`, analyses the
+  structured entries instead of substring-matching raw text, and names projects
+  from the session `cwd`
 
 ### Security
 

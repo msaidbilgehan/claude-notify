@@ -30,11 +30,15 @@ Implemented and released as **v0.1.1**. The version is single-sourced in
 
 ### Installation
 ```bash
-# Install in development mode
-pip install -e .
+# Build + (re)install the `claude-notify` CLI as a uv tool. Runs ruff/mypy/pytest
+# first, then an editable install (live source); --wheel builds a pinned artifact.
+scripts/build-install.sh            # editable (default)
+scripts/build-install.sh --wheel    # build + install a wheel
+scripts/build-install.sh --help     # all options
 
-# Install dependencies only
-pip install -r requirements.txt
+# Or directly with pip
+pip install -e .                    # development mode
+pip install -r requirements.txt     # dependencies only
 ```
 
 ### Tests, Lint, Types
@@ -75,9 +79,15 @@ claude-notify watch --verbose
 - `claude-notify config reset`: Reset to default configuration
 
 ### Watch Mode Features
-- **Real-time monitoring**: Checks transcript files for changes every 30 seconds (configurable)
-- **Smart pattern detection**: Identifies when Claude is waiting for input, asking questions, or encountering errors
-- **Project-aware**: Shows which specific project needs attention
+- **Real-time monitoring**: Polls the JSONL transcripts under every
+  `~/.claude*/projects/` tree (and `$CLAUDE_CONFIG_DIR`) for changes every 30
+  seconds (configurable); only sessions touched within `RECENT_SESSION_WINDOW`
+  (24h) are considered, and only changed files are re-parsed
+- **Smart pattern detection**: Flags a session only when Claude is *awaiting the
+  user* (it spoke/acted last) **and** its final response asks a question, makes
+  an explicit request, or reports an error — a plain "all done" is not an alert
+- **Project-aware**: Names the project from the session `cwd` (never the lossy
+  dash-encoded directory name)
 - **One-time notifications**: Won't spam you with repeated alerts for the same session
 - **Multi-project support**: Can monitor all Claude projects or just the current directory
 
@@ -88,7 +98,15 @@ The application is designed to work as a Claude Code hook. Key features:
 - Sends appropriate notifications based on event type
 - Special handling for critical tools (Bash, Write, Edit, MultiEdit)
 - Non-blocking operation to avoid interrupting Claude's workflow
-- **Project identification**: All notifications include project name in title and full path in message
+- **Project identification**: the project name (title) and full path (body) come
+  from the hook payload's `cwd` (falling back to the transcript's `cwd`, then the
+  hook process CWD). The dash-encoded `~/.claude*/projects/<dir>` name is *not*
+  decoded — it flattens path separators and cannot be reversed unambiguously.
+- **Completion summary**: `Stop`/`SubagentStop` events parse the transcript
+  (`transcript.py`) and add Claude's last response and the turn duration (last
+  user prompt → final reply). The response is whitespace-collapsed and truncated
+  to `MAX_RESPONSE_PREVIEW_CHARS`. Parsing never raises — a missing/partial file
+  degrades to fewer fields, preserving the non-blocking contract.
 
 ### Notification Channels
 
@@ -120,9 +138,11 @@ claude-notify/
 │   ├── cli.py               # Click CLI: send, watch, hook, check, config
 │   ├── config.py            # YAML config: get_default_config / load_config / save_config
 │   ├── hook_handler.py      # Claude hook event → notification routing
-│   └── session_monitor.py   # Transcript watching for `watch` mode
+│   ├── transcript.py        # Parse session JSONL → SessionSummary (last reply, duration, cwd, awaiting_user)
+│   └── session_monitor.py   # Poll ~/.claude*/projects/*.jsonl for sessions awaiting the user (`watch` mode)
 ├── tests/                   # pytest suite (test_*.py per module)
 ├── examples/                # Demos: example_usage.py, telegram_example.py, test-*.py
+├── scripts/build-install.sh # Build + (re)install the CLI via uv (editable default; --wheel for a pinned build)
 ├── .github/workflows/ci.yml # CI: ruff + pytest + mypy
 ├── pyproject.toml           # Packaging, deps, ruff/pytest/mypy config
 ├── requirements.txt         # Runtime dependencies
