@@ -117,11 +117,18 @@ The application is designed to work as a Claude Code hook. Key features:
   interpolation.
 - **Telegram** (`TelegramNotifier` in `telegram.py`, opt-in): outbound-only via the
   Bot API over stdlib `urllib`; enabled by `telegram_enabled` in config.
-- **Channel selection**: the hook fans out to every *enabled* channel via
-  `HookHandler._dispatch` and returns success if any channel delivered. Desktop is
-  gated by `desktop_enabled` (config) or the per-invocation
+- **Channel selection**: `HookHandler.dispatch_event` composes the notification,
+  fans it out to every *enabled* channel via `_dispatch`, and returns a
+  `NotificationResult` (the composed text plus a per-channel `ChannelOutcome`
+  recording `attempted`/`delivered`). `process_hook_event` is a thin wrapper that
+  returns `result.delivered` (True if any channel delivered) — keep that `bool`
+  contract. Desktop is gated by `desktop_enabled` (config) or the per-invocation
   `claude-notify hook --desktop/--no-desktop` override — use `--no-desktop` for a
   Telegram-only hook.
+- **Verbose hook output**: `claude-notify hook --verbose/--quiet` (`-v`/`-q`,
+  quiet default) prints the triggered `NotificationResult` to stdout. All
+  user-facing printing lives in `cli.py` (`_echo_notification_result`); the
+  handler never prints — keep diagnostics on `logging` per the non-print rule.
 
 **Credential precedence (gotcha):** for the Telegram token/chat id, a non-empty
 config value wins; `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` are only a fallback

@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add `claude-notify hook --verbose/--quiet` (`-v`/`-q`): in verbose mode the
+  hook prints the triggered notification — title, body, urgency, and a per-channel
+  status (sent / failed / skipped) — to stdout. Quiet by default so the hook stays
+  silent in automation. Backed by a new `HookHandler.dispatch_event` returning a
+  `NotificationResult` (`process_hook_event` still returns `bool`)
 - Add opt-in Telegram channel that mirrors desktop alerts via the Telegram Bot API (a285980)
 - Add a Telegram-only mode: the `desktop_enabled` config key and the
   `claude-notify hook --no-desktop` flag suppress the desktop channel

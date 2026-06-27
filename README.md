@@ -131,6 +131,11 @@ echo '{"tool_name": "Bash", "tool_input": {"command": "ls"}}' | claude-notify ho
 # --test, -t: Read from test.json instead of stdin
 # --desktop / --no-desktop: Force the desktop channel on/off (default: config
 #   'desktop_enabled'); use --no-desktop for a Telegram-only hook
+# --verbose / --quiet, -v / -q: Print the triggered notification (title, body,
+#   channels) to stdout; quiet by default so the hook stays silent in automation
+
+# See exactly what a hook would send (and which channels delivered):
+echo '{"cwd": "'"$PWD"'"}' | claude-notify hook --event-type Notification --verbose
 ```
 
 #### Project Path Display
