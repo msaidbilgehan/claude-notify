@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import sys
+from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
@@ -13,6 +14,51 @@ from .telegram import TelegramNotifier
 from .transcript import SessionSummary, format_preview, summarize_transcript
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True, slots=True)
+class ChannelOutcome:
+    """Delivery outcome for a single notification channel.
+
+    Attributes:
+        attempted: Whether the channel was enabled/configured and therefore
+            tried. ``False`` means the channel was skipped (desktop disabled, or
+            Telegram not configured) — distinct from an attempt that failed.
+        delivered: Whether the channel accepted the notification.
+    """
+
+    attempted: bool = False
+    delivered: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class NotificationResult:
+    """The notification a hook event produced, and where it was sent.
+
+    Carries enough to report a triggered notification on the CLI
+    (``claude-notify hook --verbose``) without re-reading the transcript or
+    re-composing the message.
+
+    Attributes:
+        event_type: The hook event that produced the notification.
+        title: Composed notification title.
+        message: Composed notification body (may span multiple lines).
+        urgency: Urgency level (``low``, ``normal``, ``critical``).
+        desktop: Desktop channel outcome.
+        telegram: Telegram channel outcome.
+    """
+
+    event_type: str
+    title: str
+    message: str
+    urgency: str
+    desktop: ChannelOutcome = ChannelOutcome()
+    telegram: ChannelOutcome = ChannelOutcome()
+
+    @property
+    def delivered(self) -> bool:
+        """True when at least one channel accepted the notification."""
+        return self.desktop.delivered or self.telegram.delivered
 
 
 class HookHandler:
@@ -73,6 +119,26 @@ class HookHandler:
 
         Returns:
             bool: True if notification was sent successfully
+
+        See :meth:`dispatch_event` for the richer result (the composed
+        notification and per-channel outcomes) consumed by
+        ``claude-notify hook --verbose``.
+        """
+        return self.dispatch_event(event_type, data).delivered
+
+    def dispatch_event(
+        self, event_type: str, data: Dict[str, Any]
+    ) -> NotificationResult:
+        """Compose the notification for a hook event and fan it out to channels.
+
+        Args:
+            event_type: Type of hook event (PreToolUse, PostToolUse, etc.)
+            data: JSON data from the hook.
+
+        Returns:
+            A :class:`NotificationResult` with the composed notification and the
+            per-channel delivery outcomes. Like every send path here it never
+            raises, preserving the non-blocking hook contract.
         """
         # Completion events get a transcript-derived summary (last response and
         # turn duration); other events fire too often to justify the file read.
@@ -98,8 +164,16 @@ class HookHandler:
             )
 
         # Fan out across every enabled channel (desktop + Telegram)
-        return self._dispatch(
+        desktop, telegram = self._dispatch(
             title, message, urgency, sound=(urgency in ("normal", "critical"))
+        )
+        return NotificationResult(
+            event_type=event_type,
+            title=title,
+            message=message,
+            urgency=urgency,
+            desktop=desktop,
+            telegram=telegram,
         )
 
     def _resolve_project(
@@ -242,43 +316,49 @@ class HookHandler:
         message: str,
         urgency: str,
         sound: bool = True
-    ) -> bool:
+    ) -> Tuple[ChannelOutcome, ChannelOutcome]:
         """Fan a notification out to every enabled channel.
 
         Desktop is gated by ``desktop_enabled`` so a Telegram-only activation
         can suppress it; Telegram is an additional, best-effort channel. Returns
-        ``True`` when *any* channel accepted the notification. Neither channel
-        is allowed to raise, preserving the non-blocking hook contract.
+        the ``(desktop, telegram)`` outcomes — each records whether the channel
+        was attempted and whether it delivered. Neither channel is allowed to
+        raise, preserving the non-blocking hook contract.
         """
-        desktop_success = False
+        desktop = ChannelOutcome()
         if self.desktop_enabled:
-            desktop_success = self.notifier.send_notification(
+            delivered = self.notifier.send_notification(
                 title=title,
                 message=message,
                 urgency=urgency,
                 sound=sound
             )
+            desktop = ChannelOutcome(attempted=True, delivered=delivered)
 
-        telegram_success = self._send_telegram(title, message, urgency)
-        return desktop_success or telegram_success
+        telegram = self._send_telegram(title, message, urgency)
+        return desktop, telegram
 
-    def _send_telegram(self, title: str, message: str, urgency: str) -> bool:
+    def _send_telegram(
+        self, title: str, message: str, urgency: str
+    ) -> ChannelOutcome:
         """Best-effort fan-out to Telegram; never affects the hook exit path
 
-        Returns whether Telegram accepted the message (``False`` when no
-        Telegram notifier is configured). ``TelegramNotifier.send_notification``
-        already swallows its own transport errors; this guard additionally keeps
-        any unexpected error from escaping the non-blocking hook contract.
+        Returns the channel outcome: ``attempted=False`` when no Telegram
+        notifier is configured, otherwise whether the Bot API accepted the
+        message. ``TelegramNotifier.send_notification`` already swallows its own
+        transport errors; this guard additionally keeps any unexpected error
+        from escaping the non-blocking hook contract.
         """
         if self.telegram is None or not self.telegram.is_configured():
-            return False
+            return ChannelOutcome()
         try:
-            return self.telegram.send_notification(
+            delivered = self.telegram.send_notification(
                 title=title, message=message, urgency=urgency
             )
+            return ChannelOutcome(attempted=True, delivered=delivered)
         except Exception as e:
             logger.warning("Telegram fan-out failed: %s", e)
-            return False
+            return ChannelOutcome(attempted=True, delivered=False)
 
     def _get_tool_input_preview(
         self, tool_name: str, tool_input: Dict[str, Any]

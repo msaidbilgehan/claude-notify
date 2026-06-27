@@ -15,7 +15,7 @@ from .config import (
     load_config,
     save_config,
 )
-from .hook_handler import HookHandler
+from .hook_handler import ChannelOutcome, HookHandler, NotificationResult
 from .notifier import ClaudeNotifier
 from .session_monitor import ClaudeSessionMonitor
 from .telegram import TelegramNotifier, build_telegram_notifier
@@ -326,6 +326,29 @@ def config_reset():
     click.echo("✓ Configuration reset to defaults")
 
 
+def _channel_label(outcome: ChannelOutcome) -> str:
+    """Render a channel outcome as a short status for verbose hook output."""
+    if not outcome.attempted:
+        return "— skipped"
+    return "✓ sent" if outcome.delivered else "✗ failed"
+
+
+def _echo_notification_result(result: NotificationResult) -> None:
+    """Print a triggered hook notification to stdout (``hook --verbose``)."""
+    click.echo(f"🔔 Notification triggered [{result.event_type}]")
+    click.echo(f"   Title:    {result.title}")
+    click.echo(f"   Urgency:  {result.urgency}")
+    # Indent continuation lines so a multi-line body aligns under "Message:".
+    body_lines = result.message.splitlines() or [""]
+    click.echo(f"   Message:  {body_lines[0]}")
+    for line in body_lines[1:]:
+        click.echo(f"             {line}")
+    click.echo(
+        f"   Channels: desktop {_channel_label(result.desktop)}"
+        f"  ·  telegram {_channel_label(result.telegram)}"
+    )
+
+
 @cli.command()
 @click.option(
     "--event-type", "-e",
@@ -345,7 +368,18 @@ def config_reset():
          "the 'desktop_enabled' config value. Use --no-desktop for a "
          "Telegram-only hook."
 )
-def hook(event_type: Optional[str], test: bool, desktop: Optional[bool]):
+@click.option(
+    "--verbose/--quiet", "-v/-q",
+    default=False,
+    help="Print the triggered notification (title, body, channels) to stdout. "
+         "Quiet by default so the hook stays silent in automation."
+)
+def hook(
+    event_type: Optional[str],
+    test: bool,
+    desktop: Optional[bool],
+    verbose: bool
+):
     """
     Process Claude Code hook events from JSON input
 
@@ -407,9 +441,14 @@ def hook(event_type: Optional[str], test: bool, desktop: Optional[bool]):
             sys.exit(1)
 
     # Process the hook event
-    success = handler.process_hook_event(event_type, data)
+    result = handler.dispatch_event(event_type, data)
 
-    if not success:
+    # Verbose mode surfaces exactly what was sent and where; quiet (the default)
+    # keeps the hook silent so it doesn't pollute automated output.
+    if verbose:
+        _echo_notification_result(result)
+
+    if not result.delivered:
         click.echo("Warning: Failed to send notification", err=True)
         # Don't exit with error code to avoid blocking Claude operations
 

@@ -6,7 +6,7 @@
 __version__ = "0.1.1"
 __author__ = "jamez01"
 
-from .hook_handler import HookHandler
+from .hook_handler import ChannelOutcome, HookHandler, NotificationResult
 from .notifier import ClaudeNotifier
 from .session_monitor import ClaudeSessionMonitor
 from .telegram import TelegramNotifier, build_telegram_notifier
@@ -17,6 +17,8 @@ __all__ = [
     "TelegramNotifier",
     "build_telegram_notifier",
     "HookHandler",
+    "NotificationResult",
+    "ChannelOutcome",
     "ClaudeSessionMonitor",
     "SessionSummary",
     "summarize_transcript",
