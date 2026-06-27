@@ -2,33 +2,35 @@
 
 from datetime import timedelta
 
-from claude_notify.hook_handler import HookHandler
+from claude_notify.hook_handler import HookHandler, NotificationResult
 
 
 class RecordingNotifier:
     """Test double that records notifications instead of displaying them."""
 
-    def __init__(self) -> None:
+    def __init__(self, delivers: bool = True) -> None:
         self.calls: list[dict] = []
+        self._delivers = delivers
 
     def send_notification(self, **kwargs) -> bool:
         self.calls.append(kwargs)
-        return True
+        return self._delivers
 
 
 class RecordingTelegram:
     """Telegram double that records sends instead of calling the Bot API."""
 
-    def __init__(self, configured: bool = True) -> None:
+    def __init__(self, configured: bool = True, delivers: bool = True) -> None:
         self.calls: list[dict] = []
         self._configured = configured
+        self._delivers = delivers
 
     def is_configured(self) -> bool:
         return self._configured
 
     def send_notification(self, **kwargs) -> bool:
         self.calls.append(kwargs)
-        return True
+        return self._delivers
 
 
 def make_handler() -> tuple[HookHandler, RecordingNotifier]:
@@ -145,6 +147,66 @@ def test_desktop_disabled_without_telegram_reports_no_delivery():
 
     assert sent is False  # no channel delivered
     assert desktop.calls == []
+
+
+def test_dispatch_event_returns_composed_notification_and_outcomes():
+    handler, _ = make_handler()
+
+    result = handler.dispatch_event("Notification", {"cwd": "/work/proj"})
+
+    assert isinstance(result, NotificationResult)
+    assert result.event_type == "Notification"
+    assert result.title.startswith("Claude Notification")
+    assert "proj" in result.title
+    assert "📁 /work/proj" in result.message
+    assert result.urgency == "normal"
+    # Desktop was attempted and delivered; no Telegram was configured.
+    assert result.desktop.attempted is True
+    assert result.desktop.delivered is True
+    assert result.telegram.attempted is False
+    assert result.telegram.delivered is False
+    assert result.delivered is True
+
+
+def test_dispatch_event_marks_disabled_desktop_as_not_attempted():
+    desktop = RecordingNotifier()
+    telegram = RecordingTelegram()
+    handler = HookHandler(
+        notifier=desktop, telegram=telegram, desktop_enabled=False
+    )
+
+    result = handler.dispatch_event("Stop", {"session_id": "abc"})
+
+    # Desktop suppressed (skipped, not failed); Telegram carried the delivery.
+    assert result.desktop.attempted is False
+    assert result.desktop.delivered is False
+    assert result.telegram.attempted is True
+    assert result.telegram.delivered is True
+    assert result.delivered is True
+
+
+def test_dispatch_event_distinguishes_failed_from_skipped():
+    desktop = RecordingNotifier(delivers=False)
+    handler = HookHandler(notifier=desktop)
+
+    result = handler.dispatch_event("Notification", {})
+
+    # Desktop was attempted but rejected the send; Telegram was never tried.
+    assert result.desktop.attempted is True
+    assert result.desktop.delivered is False
+    assert result.telegram.attempted is False
+    assert result.delivered is False
+
+
+def test_dispatch_event_reports_telegram_send_failure():
+    telegram = RecordingTelegram(delivers=False)
+    handler = HookHandler(telegram=telegram, desktop_enabled=False)
+
+    result = handler.dispatch_event("Notification", {})
+
+    assert result.telegram.attempted is True
+    assert result.telegram.delivered is False
+    assert result.delivered is False
 
 
 # A minimal but representative transcript: a meta entry, a genuine prompt, an
